@@ -36,9 +36,35 @@ export interface GenerateCallbacks {
   onRound?: (round: SusRound, index: number) => void
 }
 
-// Gemini Nano has a small context window, so we keep note excerpts short.
-const MAX_NOTES_CHARS = 4000
+// Gemini Nano has a small context window (and is slow on CPU-only laptops), so on-device
+// prompts get a short excerpt; the cloud model can take a whole chapter.
+const MAX_NOTES_CHARS: Record<SpeedMode, number> = { private: 4000, fast: 30000 }
 const CLOUD_MODEL = 'gemini-3.5-flash-lite'
+
+/**
+ * Shortens long notes by keeping evenly spaced paragraphs, so the facts come from
+ * the whole document (not just page 1).
+ */
+export function fitNotes(notes: string, maxChars: number): string {
+  if (notes.length <= maxChars) return notes
+  const paragraphs = notes
+    .split(/\n\s*\n|\n(?=[A-Z0-9•\-*])/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 30)
+  if (paragraphs.length < 2) return notes.slice(0, maxChars)
+  const avg = notes.length / paragraphs.length
+  const keep = Math.max(1, Math.floor(maxChars / avg))
+  const step = paragraphs.length / keep
+  const picked: string[] = []
+  let used = 0
+  for (let i = 0; i < keep; i++) {
+    const p = paragraphs[Math.floor(i * step)]
+    if (used + p.length > maxChars) break
+    picked.push(p)
+    used += p.length + 2
+  }
+  return picked.length ? picked.join('\n\n') : notes.slice(0, maxChars)
+}
 
 const factsSchema = Schema.object({
   properties: { facts: Schema.array({ items: Schema.string() }) },
@@ -55,7 +81,8 @@ const twistSchema = Schema.object({
 
 const models = new Map<string, GenerativeModel>()
 
-function getModel(mode: SpeedMode, schema: ObjectSchema, key: string): GenerativeModel {
+/** Hybrid model per (mode, task). With a schema it returns JSON; without, plain text. */
+function getModel(mode: SpeedMode, schema: ObjectSchema | null, key: string): GenerativeModel {
   if (!firebaseApp) throw new Error('Firebase is not configured yet. Fill in web/.env.local.')
   const cacheKey = `${mode}:${key}`
   let model = models.get(cacheKey)
@@ -65,13 +92,43 @@ function getModel(mode: SpeedMode, schema: ObjectSchema, key: string): Generativ
       mode: mode === 'private' ? InferenceMode.PREFER_ON_DEVICE : InferenceMode.PREFER_IN_CLOUD,
       inCloudParams: {
         model: CLOUD_MODEL,
-        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.8 },
+        generationConfig: schema
+          ? { responseMimeType: 'application/json', responseSchema: schema, temperature: 0.8 }
+          : { temperature: 0.2 },
       },
-      onDeviceParams: { promptOptions: { responseConstraint: schema } },
+      onDeviceParams: schema ? { promptOptions: { responseConstraint: schema } } : {},
     })
     models.set(cacheKey, model)
   }
   return model
+}
+
+/**
+ * Turns a photo or scanned page of study material into plain text.
+ * Private mode reads it with Gemini Nano on this device (JPEG/PNG), cloud otherwise.
+ */
+export async function transcribeImage(
+  jpegBase64: string,
+  mode: SpeedMode,
+): Promise<{ text: string; source: InferenceSource }> {
+  const model = getModel(mode, null, 'transcribe')
+  const result = await model.generateContent([
+    `This image is study material: handwritten or typed notes, lecture slides, a textbook page or a whiteboard.
+Write out ALL of its study content as clean plain text, in reading order.
+Keep headings and bullet points. Write formulas in plain text.
+Skip page numbers, logos and decorations. If a word is unreadable, leave it out.
+Do not add, explain or summarize anything that isn't in the image.`,
+    { type: 'inlineData', inlineData: { data: jpegBase64, mimeType: 'image/jpeg' } },
+  ])
+  return { text: result.response.text().trim(), source: result.response.inferenceSource ?? 'in_cloud' }
+}
+
+/** Starts the on-device model for photo reading (call from a user gesture). */
+export function warmUpImageModel(mode: SpeedMode): void {
+  if (mode !== 'private') return
+  getModel(mode, null, 'transcribe')
+    .initializeDeviceModel()
+    .catch(() => {})
 }
 
 /**
@@ -92,15 +149,15 @@ async function ask<T>(model: GenerativeModel, prompt: string): Promise<{ data: T
 
 // ---------- Step 1: pull the key facts out of the notes ----------
 
-function factsPrompt(notes: string, count: number): string {
+function factsPrompt(notes: string, count: number, mode: SpeedMode): string {
   return `List the ${count} most important, testable facts in these study notes.
 Each fact: one short, complete sentence (max 25 words) using the notes' own terms.
 Each fact must contain a specific term, number, place, cause or direction that a student must remember.
-Different facts must cover different ideas.
+Different facts must cover different ideas, spread across the whole notes.
 
 NOTES:
 """
-${notes.slice(0, MAX_NOTES_CHARS)}
+${fitNotes(notes, MAX_NOTES_CHARS[mode])}
 """`
 }
 
@@ -174,7 +231,7 @@ export async function generateSusDeck(
   // Ask for one spare fact in case a twist fails validation.
   const { data, source } = await ask<{ facts?: string[] }>(
     getModel(mode, factsSchema, 'facts'),
-    factsPrompt(trimmed, roundCount + 1),
+    factsPrompt(trimmed, roundCount + 1, mode),
   )
   const facts = [...new Set((data.facts ?? []).map((f) => f.trim()).filter((f) => f.length > 15))]
   if (facts.length === 0) throw new Error('The AI could not find clear facts. Try longer or clearer notes.')

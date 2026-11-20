@@ -733,3 +733,184 @@ input:focus {
     animation: none;
   }
 }
+
+/* Phones: grid tracks must be allowed to shrink below their content's natural width. */
+.home-actions,
+.phone-stage,
+.vote-list,
+.stage,
+.lobby-side,
+.deck,
+.join-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+.join-row input {
+  width: 0;
+}
+
+/* ================= Notes form: steps, drop zone ================= */
+.form-steps {
+  display: grid;
+  gap: 22px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.step {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.step + .step {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.step-head h2 {
+  font-size: 18px;
+  flex: 1;
+}
+.step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
+  font-size: 14px;
+  flex: none;
+}
+.link.small {
+  font-size: 14px;
+}
+.link:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 18px 14px;
+  text-align: center;
+  background: var(--bg);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dropzone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.dropzone.reading {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.drop-title {
+  margin: 0 0 10px;
+  font-weight: 600;
+  color: var(--text-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.dropzone.reading .drop-title {
+  margin: 0;
+}
+.drop-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.secondary {
+  background: var(--surface);
+  color: var(--text-h);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondary:hover {
+  border-color: var(--accent);
+}
+/* "Take a photo" only makes sense on phones and tablets. */
+@media (hover: hover) and (pointer: fine) {
+  .touch-only {
+    display: none;
+  }
+}
+.drop-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+  flex: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+.file-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.file-chips li {
+  background: var(--real-soft);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.file-note {
+  color: var(--muted);
+}
+.notes-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.notes-meta .ok {
+  color: var(--real);
+}
+.form-steps .mode {
+  margin-top: 0;
+}
+.form-steps .actions {
+  margin-top: 0;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.elapsed {
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
