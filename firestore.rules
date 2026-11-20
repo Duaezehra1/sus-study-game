@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// Sus game rooms.
+// - Anyone signed in (anonymous auth) can see a room's public state and player list.
+// - Only the host can change the room, write secret cards, see the deck and read votes.
+// - Each player can only read their own secret card and write their own vote.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+    function roomData(code) {
+      return get(/databases/$(database)/documents/rooms/$(code)).data;
+    }
+    function isHost(code) {
+      return signedIn() && roomData(code).hostUid == request.auth.uid;
+    }
+
+    match /rooms/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.status == 'lobby';
+      allow update, delete: if signedIn() && resource.data.hostUid == request.auth.uid;
+
+      match /players/{uid} {
+        allow read: if signedIn();
+        // Join only while the room is in the lobby, with a sane name and zero score.
+        allow create: if signedIn() && request.auth.uid == uid
+          && roomData(code).status == 'lobby'
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 20
+          && request.resource.data.score == 0;
+        // Players may only rename themselves; the host updates scores.
+        allow update: if isHost(code) || (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 20);
+        allow delete: if isHost(code) || (signedIn() && request.auth.uid == uid);
+      }
+
+      // The card each player sees this round. Private to that player.
+      match /hands/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isHost(code));
+        allow write: if isHost(code);
+      }
+
+      // One vote per player per round; only the host can read them before the reveal.
+      match /votes/{uid} {
+        allow read: if isHost(code) || (signedIn() && request.auth.uid == uid);
+        allow create, update: if signedIn() && request.auth.uid == uid
+          && roomData(code).status == 'vote'
+          && request.resource.data.round == roomData(code).roundIndex
+          && request.resource.data.target is string
+          && request.resource.data.target != uid;
+        allow delete: if isHost(code);
+      }
+
+      // The full deck (real + sus cards). Host only, so nobody can peek.
+      match /secret/{doc} {
+        allow read, write: if isHost(code);
+      }
+    }
+  }
+}

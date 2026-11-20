@@ -1,0 +1,9 @@
+# Local tooling
+.claude/
+**/.claude/
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# Secrets: Firebase config, App Check debug token
+**/.env.local
