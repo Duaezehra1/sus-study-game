@@ -8,7 +8,7 @@ import {
   type InferenceSource,
   type ObjectSchema,
 } from 'firebase/ai'
-import { firebaseApp } from '../firebase'
+import { getApp, getApps } from 'firebase/app'
 
 /** One round of Sus: the true fact, its twin with exactly one lie, and why. */
 export interface SusRound {
@@ -26,8 +26,15 @@ export interface SusRound {
 /**
  * private: Gemini Nano on this device first; cloud only if Nano is unavailable.
  * fast:    cloud first (seconds instead of minutes on laptops without a GPU).
+ * device:  Gemini Nano only, never the cloud (the Chrome extension, which has no App Check).
  */
-export type SpeedMode = 'private' | 'fast'
+export type SpeedMode = 'private' | 'fast' | 'device'
+
+const INFERENCE_MODE: Record<SpeedMode, InferenceMode> = {
+  private: InferenceMode.PREFER_ON_DEVICE,
+  fast: InferenceMode.PREFER_IN_CLOUD,
+  device: InferenceMode.ONLY_ON_DEVICE,
+}
 
 export interface GenerateCallbacks {
   /** Fired once the key facts have been pulled out of the notes. */
@@ -38,7 +45,7 @@ export interface GenerateCallbacks {
 
 // Gemini Nano has a small context window (and is slow on CPU-only laptops), so on-device
 // prompts get a short excerpt; the cloud model can take a whole chapter.
-const MAX_NOTES_CHARS: Record<SpeedMode, number> = { private: 4000, fast: 30000 }
+const MAX_NOTES_CHARS: Record<SpeedMode, number> = { private: 4000, fast: 30000, device: 4000 }
 const CLOUD_MODEL = 'gemini-3.5-flash-lite'
 
 /**
@@ -83,13 +90,14 @@ const models = new Map<string, GenerativeModel>()
 
 /** Hybrid model per (mode, task). With a schema it returns JSON; without, plain text. */
 function getModel(mode: SpeedMode, schema: ObjectSchema | null, key: string): GenerativeModel {
-  if (!firebaseApp) throw new Error('Firebase is not configured yet. Fill in web/.env.local.')
+  // Uses whichever default Firebase app the host (website or extension) initialized.
+  if (getApps().length === 0) throw new Error('Firebase is not configured yet. Fill in web/.env.local.')
   const cacheKey = `${mode}:${key}`
   let model = models.get(cacheKey)
   if (!model) {
-    const ai = getAI(firebaseApp, { backend: new GoogleAIBackend() })
+    const ai = getAI(getApp(), { backend: new GoogleAIBackend() })
     model = getGenerativeModel(ai, {
-      mode: mode === 'private' ? InferenceMode.PREFER_ON_DEVICE : InferenceMode.PREFER_IN_CLOUD,
+      mode: INFERENCE_MODE[mode],
       inCloudParams: {
         model: CLOUD_MODEL,
         generationConfig: schema
@@ -125,7 +133,7 @@ Do not add, explain or summarize anything that isn't in the image.`,
 
 /** Starts the on-device model for photo reading (call from a user gesture). */
 export function warmUpImageModel(mode: SpeedMode): void {
-  if (mode !== 'private') return
+  if (mode === 'fast') return
   getModel(mode, null, 'transcribe')
     .initializeDeviceModel()
     .catch(() => {})

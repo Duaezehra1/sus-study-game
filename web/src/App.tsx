@@ -6,12 +6,17 @@ import { Practice } from './screens/Practice'
 import { normalizeCode } from './game/room'
 import './App.css'
 
-type Route = { name: 'home' } | { name: 'host' } | { name: 'practice' } | { name: 'join'; code: string }
+type Route =
+  | { name: 'home' }
+  | { name: 'host'; handoff: boolean }
+  | { name: 'practice'; handoff: boolean }
+  | { name: 'join'; code: string }
 
 function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/')
-  if (parts[0] === 'host') return { name: 'host' }
-  if (parts[0] === 'practice') return { name: 'practice' }
+  // "/handoff": notes are coming from the Sus Chrome extension.
+  if (parts[0] === 'host') return { name: 'host', handoff: parts[1] === 'handoff' }
+  if (parts[0] === 'practice') return { name: 'practice', handoff: parts[1] === 'handoff' }
   if (parts[0] === 'join' && parts[1]) {
     const code = normalizeCode(parts[1])
     if (code.length === 4) return { name: 'join', code }
@@ -33,9 +38,9 @@ function App() {
 
   switch (route.name) {
     case 'host':
-      return <Host />
+      return <Host handoff={route.handoff} />
     case 'practice':
-      return <Practice />
+      return <Practice handoff={route.handoff} />
     case 'join':
       return <Play key={route.code} code={route.code} />
     default:

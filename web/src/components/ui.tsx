@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react'
 import { warmUpImageModel, type SpeedMode } from '../ai/susGenerator'
-import { ACCEPTED_FILES, describeFileKind, readStudyFile, type ReadResult } from '../ai/readFile'
+import { ACCEPTED_FILES, describeFileKind, readPageImages, readStudyFile, type ReadResult } from '../ai/readFile'
 import { SAMPLE_NOTES } from '../sampleNotes'
 
 export function Brand({ compact = false }: { compact?: boolean }) {
@@ -55,7 +55,13 @@ export const MIN_NOTES_CHARS = 80
 
 interface LoadedFile {
   name: string
-  result: ReadResult
+  /** e.g. "1 page · 🔒 read on this device" */
+  detail: string
+  note?: string
+}
+
+function describeResult(r: ReadResult): string {
+  return `${r.pages ? `${r.pages} page${r.pages === 1 ? '' : 's'} · ` : ''}${howLabel(r)}`
 }
 
 function howLabel(r: ReadResult): string {
@@ -78,6 +84,8 @@ export function NotesForm(props: {
   disabled?: boolean
   onSubmit: (req: DeckRequest) => void
   footer?: ReactNode
+  /** Notes handed over from the Sus Chrome extension. */
+  incoming?: { text: string; label: string; images?: string[]; fast?: boolean } | null
 }) {
   const [notes, setNotes] = useState('')
   const [rounds, setRounds] = useState(5)
@@ -89,6 +97,39 @@ export function NotesForm(props: {
   const fileInput = useRef<HTMLInputElement>(null)
   const cameraInput = useRef<HTMLInputElement>(null)
   const [elapsed, setElapsed] = useState(0)
+
+  // Screens pass a fresh `incoming` object on every render, so key the effect on its values
+  // (the strings and the images array from state are stable); otherwise notes get appended again and again.
+  const incomingText = props.incoming?.text
+  const incomingLabel = props.incoming?.label
+  const incomingImages = props.incoming?.images
+  const incomingFast = props.incoming?.fast
+  useEffect(() => {
+    if (incomingText === undefined || incomingLabel === undefined) return
+    const incoming = { text: incomingText, label: incomingLabel, images: incomingImages, fast: incomingFast }
+    const append = (text: string) => setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${text}` : text))
+    // "Too slow? Make it in seconds" in the extension: start in Fast (cloud) mode.
+    if (incoming.fast) setMode('fast')
+    if (incoming.text) {
+      append(incoming.text)
+      setFiles((prev) => [...prev, { name: incoming.label, detail: '🧩 from the Sus Chrome extension' }])
+    }
+    if (incoming.images?.length) {
+      // The student chose "Read it fast" in the extension: scanned pages go to cloud AI.
+      setMode('fast')
+      setReading('Reading scanned pages…')
+      readPageImages(incoming.images, 'fast', setReading)
+        .then((result) => {
+          append(result.text)
+          setFiles((prev) => [
+            ...prev,
+            { name: incoming.label, detail: `🧩 scanned PDF from the extension · ${describeResult(result)}` },
+          ])
+        })
+        .catch((e) => setFileError(`${incoming.label}: ${e instanceof Error ? e.message : String(e)}`))
+        .finally(() => setReading(null))
+    }
+  }, [incomingText, incomingLabel, incomingImages, incomingFast])
 
   // Live seconds counter while a file is being read, so slow on-device reads never look frozen.
   const isReading = reading !== null
@@ -111,7 +152,7 @@ export function NotesForm(props: {
         setReading(`Opening ${file.name}…`)
         const result = await readStudyFile(file, mode, setReading)
         setNotes((prev) => (prev.trim() ? `${prev.trim()}\n\n${result.text}` : result.text))
-        setFiles((prev) => [...prev, { name: file.name, result }])
+        setFiles((prev) => [...prev, { name: file.name, detail: describeResult(result), note: result.note }])
       } catch (e) {
         setFileError(`${file.name}: ${e instanceof Error ? e.message : String(e)}`)
       }
@@ -219,9 +260,8 @@ export function NotesForm(props: {
           <ul className="file-chips">
             {files.map((f, i) => (
               <li key={i}>
-                <strong>{f.name}</strong>
-                {f.result.pages ? ` · ${f.result.pages} page${f.result.pages === 1 ? '' : 's'}` : ''} · {howLabel(f.result)}
-                {f.result.note && <span className="file-note"> · {f.result.note}</span>}
+                <strong>{f.name}</strong> · {f.detail}
+                {f.note && <span className="file-note"> · {f.note}</span>}
               </li>
             ))}
           </ul>

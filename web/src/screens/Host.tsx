@@ -4,6 +4,7 @@ import type { InferenceSource } from 'firebase/ai'
 import { generateSusDeck, warmUpOnDeviceModel, type SusRound } from '../ai/susGenerator'
 import { isFirebaseConfigured } from '../firebase'
 import { Brand, Highlighted, NotesForm, SourceChip, type DeckRequest } from '../components/ui'
+import { useExtensionHandoff } from '../game/handoff'
 import {
   createRoom,
   endGame,
@@ -41,7 +42,8 @@ function writeHostRoom(code: string | null) {
 }
 
 /** The big screen: create a room, show the code, run the rounds. */
-export function Host() {
+export function Host({ handoff = false }: { handoff?: boolean }) {
+  const fromExtension = useExtensionHandoff(handoff)
   const [code, setCode] = useState<string | null>(readHostRoom)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
@@ -169,6 +171,7 @@ export function Host() {
           <a href="#/">← Home</a> · Host a game
         </p>
         <NotesForm
+          incoming={fromExtension && { text: fromExtension.notes, label: fromExtension.title, images: fromExtension.images, fast: fromExtension.fast }}
           submitLabel="Create room"
           busyLabel="Creating room…"
           busy={creating}

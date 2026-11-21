@@ -21,6 +21,23 @@ Built for the **#BuildHybridAI 2026** hackathon with **Firebase AI Logic hybrid 
 
 There's also a **solo practice** mode: pick the sus card in each pair.
 
+## Chrome extension: quiz me on this page
+
+The **Sus side panel** turns whatever you're reading into a quick quiz, fully on-device with Gemini Nano (`ONLY_ON_DEVICE`):
+
+- Click the Sus icon (or right-click → **Quiz me on this with Sus**) on an article, a lecture PDF open in Chrome, or selected text.
+- Text PDFs are read in the panel with PDF.js, so nothing is uploaded. Scanned PDFs ask first: read page 1 privately here (slow on CPU-only laptops), or hand the page images to the Sus website for fast cloud reading.
+- **🎉 Play this with friends** and **⚡ Too slow?** hand the notes to the website (via `chrome.storage.session` and a content script, never in the URL) to host a room or make the deck in the cloud.
+
+Build and load it:
+
+```bash
+cd web
+npm run build:extension      # outputs web/dist-extension
+```
+
+Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `web/dist-extension`. To quiz PDFs saved on your computer, open the extension's **Details** and turn on **Allow access to file URLs**.
+
 ## Hybrid AI: what runs where
 
 | Task | 🔒 Private mode | ⚡ Fast mode |
@@ -92,6 +109,8 @@ web/src/ai/readFile.ts       PDF (PDF.js) / image / text file reading
 web/src/game/room.ts         Rooms, dealing, voting, scoring (Firestore)
 web/src/screens/             Home, Host (big screen), Play (phone), Practice (solo)
 web/src/components/ui.tsx    3-step notes form with file drop, paste and mode switch
+web/src/game/handoff.ts      Receives notes handed over from the Chrome extension
+web/extension/               Chrome extension (MV3): side panel, background, content script
 ```
 
 ## License

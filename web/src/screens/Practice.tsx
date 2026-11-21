@@ -3,6 +3,7 @@ import type { InferenceSource } from 'firebase/ai'
 import { generateSusDeck, warmUpOnDeviceModel, type SusRound } from '../ai/susGenerator'
 import { isFirebaseConfigured } from '../firebase'
 import { Brand, Highlighted, NotesForm, SourceChip, type DeckRequest } from '../components/ui'
+import { useExtensionHandoff } from '../game/handoff'
 
 type Status = 'idle' | 'working' | 'done' | 'error'
 
@@ -13,7 +14,8 @@ interface Timing {
 }
 
 /** Solo mode: make a deck and pick the sus card in each pair. */
-export function Practice() {
+export function Practice({ handoff = false }: { handoff?: boolean }) {
+  const fromExtension = useExtensionHandoff(handoff)
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const [download, setDownload] = useState<number | null>(null)
@@ -77,6 +79,7 @@ export function Practice() {
       )}
 
       <NotesForm
+        incoming={fromExtension && { text: fromExtension.notes, label: fromExtension.title, images: fromExtension.images, fast: fromExtension.fast }}
         submitLabel="Make the game"
         busyLabel="Hiding liars in your notes…"
         busy={status === 'working'}
